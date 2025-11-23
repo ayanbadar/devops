@@ -4,20 +4,20 @@ This guide explains how to deploy a React (Next.js) frontend, a NestJS backend, 
 
 📌 Overview
 
-1. This deployment covers:
-2. S3 bucket for static frontend hosting
-3. S3 bucket for backend file storage
-4. EC2 instance for NestJS backend + Dockerized Postgres
-5. Nginx as a reverse proxy
-6. Connecting frontend & backend
+- This deployment covers:
+- S3 bucket for static frontend hosting
+- S3 bucket for backend file storage
+- EC2 instance for NestJS backend + Dockerized Postgres
+- Nginx as a reverse proxy
+- Connecting frontend & backend
 
 1. ✅ Prepare AWS Account
 
 Ensure:
 
-1.1 IAM user has AdministratorAccess
+IAM user has AdministratorAccess
 
-1.2 AWS CLI installed & configured:
+AWS CLI installed & configured:
 
 ```
 aws configure
@@ -27,19 +27,19 @@ aws configure
 
 2.1 Create Bucket
 
-a. Name: your-frontend-dev
+Name: your-frontend-dev
 
-b. Disable Block Public Access (for public frontend hosting)
+Disable Block Public Access (for public frontend hosting)
 
-c. Enable Static Website Hosting
+Enable Static Website Hosting
 
-d. Index: index.html
+Index: index.html
 
-e. Error: index.html
+Error: index.html
 
 2.2 Bucket Policy
 
-a. Replace with your bucket name:
+Replace with your bucket name:
 
 ```
 {
@@ -60,9 +60,9 @@ a. Replace with your bucket name:
 
 3.1 Create another bucket:
 
-a. Name: your-backend-storage-dev
+Name: your-backend-storage-dev
 
-b. Keep private access.
+Keep private access.
 
 4. ⚙️ Launch EC2 Instance for Backend
 
