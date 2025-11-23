@@ -15,30 +15,33 @@ This guide explains how to deploy a React (Next.js) frontend, a NestJS backend, 
 
 Ensure:
 
-a. IAM user has AdministratorAccess
-b. AWS CLI installed & configured:
+1.1 IAM user has AdministratorAccess
+
+1.2 AWS CLI installed & configured:
 
 ```
 aws configure
 ```
 
 2. 🎨 Setup S3 Bucket – Frontend Hosting
+
 2.1 Create Bucket
 
-Name: your-frontend-dev
+a. Name: your-frontend-dev
 
-Disable Block Public Access (for public frontend hosting)
+b. Disable Block Public Access (for public frontend hosting)
 
-Enable Static Website Hosting
+c. Enable Static Website Hosting
 
-Index: index.html
+d. Index: index.html
 
-Error: index.html
+e. Error: index.html
 
 2.2 Bucket Policy
 
-Replace with your bucket name:
+a. Replace with your bucket name:
 
+```
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -51,14 +54,15 @@ Replace with your bucket name:
     }
   ]
 }
+```
 
 3. 🗂️ Setup S3 Bucket – Backend File Storage
 
-Create another bucket:
+3.1 Create another bucket:
 
-Name: your-backend-storage-dev
+a. Name: your-backend-storage-dev
 
-Keep private access.
+b. Keep private access.
 
 4. ⚙️ Launch EC2 Instance for Backend
 
@@ -72,27 +76,36 @@ Allow ports:
 22 (SSH), 80 (HTTP), 443 (HTTPS)
 
 5. 📦 Install Required Software on EC2
+
+```
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y nginx git curl build-essential
+```
 
 Install Node.js (LTS)
+```
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt install -y nodejs
+```
 
 Install Docker + Docker Compose
+```
 sudo apt install -y docker.io docker-compose
 sudo systemctl enable docker --now
 sudo usermod -aG docker $USER
+```
 
 6. 🐘 Setup Postgres (Dockerized)
 
 Inside EC2:
 
+```
 mkdir ~/postgres && cd ~/postgres
-
+```
 
 Create docker-compose.yml:
 
+```
 version: '3.8'
 services:
   db:
@@ -108,21 +121,24 @@ services:
       - pgdata:/var/lib/postgresql/data
 volumes:
   pgdata:
-
+```
 
 Start Postgres:
 
+```
 docker-compose up -d
-
+```
 7. 🧩 Clone & Setup Backend (NestJS)
+```
 cd ~
 git clone -b dev <your-repo-url> backend
 cd backend
 npm install
-
+```
 
 Create .env:
 
+```
 DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_USER=devuser
@@ -135,31 +151,36 @@ AWS_ACCESS_KEY_ID=xxxx
 AWS_SECRET_ACCESS_KEY=xxxx
 
 PORT=3000
-
+```
 
 Test:
-
+```
 npm run start:dev
-
+```
 
 Backend runs at:
 
+```
 http://<EC2_PUBLIC_IP>:3000
+```
 
 8. 🌐 Configure Nginx Reverse Proxy
 
 Remove default config:
 
+```
 sudo rm /etc/nginx/sites-enabled/default
-
+```
 
 Create backend config:
 
+```
 sudo nano /etc/nginx/sites-available/backend
-
+```
 
 Paste:
 
+```
 server {
     listen 80;
     server_name _;
@@ -186,35 +207,41 @@ server {
         proxy_buffering off;
     }
 }
-
+```
 
 Enable & restart:
 
+```
 sudo ln -s /etc/nginx/sites-available/backend /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl restart nginx
+```
 
 9. 🎯 Deploy Frontend (Next.js) on S3
 
 On your local machine:
 
+```
 git clone -b dev <frontend-repo> frontend
 cd frontend
 
 npm install
 npm run build
 npm run export
-
+```
 
 Upload:
 
+```
 aws s3 sync out/ s3://your-frontend-dev --delete
+```
 
 10. 🔗 Connect Frontend to Backend
 
 Update frontend .env:
 
+```
 NEXT_PUBLIC_API_URL=http://<EC2_PUBLIC_IP>
-
+```
 
 Rebuild & redeploy to S3.
