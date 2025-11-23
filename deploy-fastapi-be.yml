@@ -1,0 +1,122 @@
+name: Deploy to Prod
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-prod-be.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment: prod
+
+    env:
+      BACKEND_REMOTE_DIR: /home/ec2-user/convert-ai/backend
+      VENV_DIR: /home/ec2-user/convert-ai/backend/venv
+      ALEMBIC_INI_FILE: alembic.ini
+      FASTAPI_SERVICE: fastapi
+      NGINX_SERVICE: nginx
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ---------- VALIDATE SECRETS ----------
+      - name: Validate SSH secrets
+        run: |
+          set -euo pipefail
+          [ -n "${{ secrets.SSH_USER }}" ] || { echo "Missing secret: SSH_USER"; exit 1; }
+          [ -n "${{ secrets.SSH_HOST }}" ] || { echo "Missing secret: SSH_HOST"; exit 1; }
+          [ -n "${{ secrets.SSH_KEY }}" ]  || { echo "Missing secret: SSH_KEY"; exit 1; }
+
+      # ---------- SSH PREP ----------
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          cat >> ~/.ssh/config <<'CFG'
+          Host deploy-target
+            HostName ${{ secrets.SSH_HOST }}
+            User ${{ secrets.SSH_USER }}
+            IdentityFile ~/.ssh/id_rsa
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking accept-new
+          CFG
+          chmod 600 ~/.ssh/config
+
+      # ---------- BACKEND DEPLOY ----------
+      - name: Rsync Backend code
+        run: |
+          rsync -az --delete \
+            --exclude "__pycache__" \
+            --exclude ".venv" \
+            --exclude "venv" \
+            -e "ssh" \
+            backend/ deploy-target:${{ env.BACKEND_REMOTE_DIR }}/
+
+      - name: Write BE .env on server
+        run: |
+          ssh deploy-target "bash -s" <<EOF
+          set -euo pipefail
+          cat > "${{ env.BACKEND_REMOTE_DIR }}/.env" <<'ENVFILE'
+          ${{ secrets.BACKEND_ENV }}
+          ENVFILE
+          chmod 600 "${{ env.BACKEND_REMOTE_DIR }}/.env"
+          EOF
+
+      - name: Write Alembic INI on server
+        run: |
+          ssh deploy-target "bash -s" <<EOF
+          set -euo pipefail
+          cat > "${{ env.BACKEND_REMOTE_DIR }}/${{ env.ALEMBIC_INI_FILE }}" <<'ALEMBIC_INI'
+          ${{ secrets.BACKEND_ALEMBIC_INI }}
+          ALEMBIC_INI
+          chmod 640 "${{ env.BACKEND_REMOTE_DIR }}/${{ env.ALEMBIC_INI_FILE }}"
+          EOF
+
+      - name: Install Python deps, Alembic upgrade, restart services
+        run: |
+          ssh deploy-target "bash -s" <<EOF
+          set -euo pipefail
+
+          VENV_DIR="${{ env.VENV_DIR }}"
+          BACKEND_REMOTE_DIR="${{ env.BACKEND_REMOTE_DIR }}"
+          ALEMBIC_INI_FILE="${{ env.ALEMBIC_INI_FILE }}"
+          FASTAPI_SERVICE="${{ env.FASTAPI_SERVICE }}"
+          NGINX_SERVICE="${{ env.NGINX_SERVICE }}"
+
+          if [ ! -d "\${VENV_DIR}" ]; then
+            python3.11 -m venv "${VENV_DIR}"
+          else
+            rm -rf "${VENV_DIR}"
+            python3.11 -m venv "${VENV_DIR}"
+          fi
+
+          source "${VENV_DIR}/bin/activate"
+          pip install --upgrade pip
+
+          if [ -f "\${BACKEND_REMOTE_DIR}/requirements.txt" ]; then
+            pip install -r "\${BACKEND_REMOTE_DIR}/requirements.txt"
+          elif [ -f "\${BACKEND_REMOTE_DIR}/packages.txt" ]; then
+            pip install -r "\${BACKEND_REMOTE_DIR}/packages.txt"
+          fi
+
+          cd "\${BACKEND_REMOTE_DIR}"
+          if [ -f "\${ALEMBIC_INI_FILE}" ]; then
+            alembic -c "\${ALEMBIC_INI_FILE}" upgrade head
+          else
+            alembic upgrade head
+          fi
+
+          sudo systemctl daemon-reload
+          sudo systemctl restart "${FASTAPI_SERVICE}"
+          sudo "${NGINX_SERVICE}" -t
+          sudo systemctl reload "${NGINX_SERVICE}"
+          EOF
